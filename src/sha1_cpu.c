@@ -8,7 +8,7 @@
 
 #include "sha1_core.h"
 
-#define CPU_MAX_NONCE_BYTES 8
+#define CPU_MAX_NONCE_BYTES 16
 
 typedef struct {
     uint8_t *data;
@@ -17,7 +17,8 @@ typedef struct {
 
 typedef struct {
     int nonce_len;
-    uint64_t start_nonce;
+    uint64_t start_nonce_lo;
+    uint64_t start_nonce_hi;
     uint64_t max_candidates;
     int report_every;
 } CpuSearchConfig;
@@ -101,7 +102,8 @@ static void print_usage(const char *program) {
             "Usage: %s --data <hex> [--nonce <hex>] [--suffix <hex>] [options]\n"
             "Options for CPU search (--suffix provided):\n"
             "  --nonce-len <n>   Nonce length in bytes (1-%d, default 4)\n"
-            "  --start <n>       Starting nonce counter (default 0)\n"
+            "  --start <n>       Starting nonce counter (default 0, little-endian)\n"
+            "  --start-hex <hex> Starting nonce bytes (little-endian)\n"
             "  --max <n>         Maximum candidates to test (default 16777216)\n"
             "  --report <n>      Print progress every n candidates (0 disables)\n",
             program, CPU_MAX_NONCE_BYTES);
@@ -115,10 +117,23 @@ static void print_hex(const uint8_t *data, size_t len) {
     }
 }
 
-static void encode_nonce(uint64_t value, int nonce_len, uint8_t *out) {
+static void encode_nonce(uint64_t lo, uint64_t hi, int nonce_len, uint8_t *out) {
     for (int i = 0; i < nonce_len; ++i) {
-        out[i] = (uint8_t)((value >> (8 * i)) & 0xFF);
+        if (i < 8) {
+            out[i] = (uint8_t)((lo >> (8 * i)) & 0xFF);
+        } else {
+            int shift = i - 8;
+            out[i] = (uint8_t)((hi >> (8 * shift)) & 0xFF);
+        }
     }
+}
+
+static void add_offset(uint64_t base_lo, uint64_t base_hi, uint64_t offset,
+                       uint64_t *out_lo, uint64_t *out_hi) {
+    uint64_t sum_lo = base_lo + offset;
+    uint64_t carry = (sum_lo < base_lo) ? 1ULL : 0ULL;
+    *out_lo = sum_lo;
+    *out_hi = base_hi + carry;
 }
 
 int main(int argc, char **argv) {
@@ -127,10 +142,12 @@ int main(int argc, char **argv) {
     const char *suffix_hex = NULL;
     CpuSearchConfig cfg = {
         .nonce_len = 4,
-        .start_nonce = 0,
+        .start_nonce_lo = 0,
+        .start_nonce_hi = 0,
         .max_candidates = 1ULL << 24,
         .report_every = 0,
     };
+    const char *start_hex = NULL;
 
     for (int i = 1; i < argc; ++i) {
         const char *arg = argv[i];
@@ -143,7 +160,10 @@ int main(int argc, char **argv) {
         } else if (strcmp(arg, "--nonce-len") == 0 && (i + 1) < argc) {
             cfg.nonce_len = atoi(argv[++i]);
         } else if (strcmp(arg, "--start") == 0 && (i + 1) < argc) {
-            cfg.start_nonce = strtoull(argv[++i], NULL, 0);
+            cfg.start_nonce_lo = strtoull(argv[++i], NULL, 0);
+            cfg.start_nonce_hi = 0;
+        } else if (strcmp(arg, "--start-hex") == 0 && (i + 1) < argc) {
+            start_hex = argv[++i];
         } else if (strcmp(arg, "--max") == 0 && (i + 1) < argc) {
             cfg.max_candidates = strtoull(argv[++i], NULL, 0);
         } else if (strcmp(arg, "--report") == 0 && (i + 1) < argc) {
@@ -184,6 +204,26 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+    if (start_hex) {
+        ByteArray start_bytes = parse_hex_string(start_hex);
+        if (start_bytes.len > (size_t)cfg.nonce_len) {
+            fprintf(stderr, "start-hex length exceeds nonce length\n");
+            free_byte_array(&start_bytes);
+            goto cleanup;
+        }
+        cfg.start_nonce_lo = 0;
+        cfg.start_nonce_hi = 0;
+        for (size_t i = 0; i < start_bytes.len; ++i) {
+            if (i < 8) {
+                cfg.start_nonce_lo |=
+                    ((uint64_t)start_bytes.data[i]) << (8 * i);
+            } else {
+                cfg.start_nonce_hi |=
+                    ((uint64_t)start_bytes.data[i]) << (8 * (i - 8));
+            }
+        }
+        free_byte_array(&start_bytes);
+    }
 
     if (suffix.len > 0) {
         if (cfg.max_candidates == 0) {
@@ -196,11 +236,11 @@ int main(int argc, char **argv) {
         bool found = false;
 
         for (uint64_t i = 0; i < cfg.max_candidates; ++i) {
-            uint64_t value = cfg.start_nonce + i;
-            if (value < cfg.start_nonce) {
-                break;  // overflow
-            }
-            encode_nonce(value, cfg.nonce_len, nonce_bytes);
+            uint64_t value_lo = 0;
+            uint64_t value_hi = 0;
+            add_offset(cfg.start_nonce_lo, cfg.start_nonce_hi, i,
+                       &value_lo, &value_hi);
+            encode_nonce(value_lo, value_hi, cfg.nonce_len, nonce_bytes);
 
             Sha1Ctx ctx;
             sha1_init(&ctx);

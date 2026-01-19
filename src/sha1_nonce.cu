@@ -16,7 +16,7 @@
 namespace {
 
 constexpr int MAX_DATA_BYTES = 128;
-constexpr int MAX_NONCE_BYTES = 8;
+constexpr int MAX_NONCE_BYTES = 16;
 
 __constant__ uint8_t d_data_bytes[MAX_DATA_BYTES];
 __constant__ int d_data_len;
@@ -29,9 +29,12 @@ struct SearchConfig {
     int threads_per_block = 256;
     int nonces_per_thread = 8;
     int nonce_len = 4;
-    uint64_t start_nonce = 0;
+    uint64_t start_nonce_lo = 0;
+    uint64_t start_nonce_hi = 0;
     uint64_t max_batches = 0;
     int report_every = 100;
+    bool bench_mode = false;
+    bool use_global_data = false;
 };
 
 struct DeviceDeleter {
@@ -42,9 +45,9 @@ struct DeviceDeleter {
     }
 };
 
-using DeviceNoncePtr =
-    std::unique_ptr<unsigned long long, DeviceDeleter>;
 using DeviceIntPtr = std::unique_ptr<int, DeviceDeleter>;
+using DeviceU64Ptr = std::unique_ptr<uint64_t, DeviceDeleter>;
+using DeviceBytePtr = std::unique_ptr<uint8_t, DeviceDeleter>;
 
 static inline int hex_value(char c) {
     if (c >= '0' && c <= '9') {
@@ -111,9 +114,13 @@ void print_usage(const char *program) {
                  "  --blocks <n>         CUDA blocks per launch (default 256)\n"
                  "  --threads <n>        Threads per block (default 256)\n"
                  "  --per-thread <n>     Nonces evaluated by each thread per launch (default 8)\n"
-                 "  --start <n>          Starting nonce counter (default 0)\n"
+                 "  --start <n>          Starting nonce counter (default 0, little-endian)\n"
+                 "  --start-hex <hex>    Starting nonce bytes (little-endian)\n"
                  "  --max-batches <n>    Stop after processing n batches (0 = unlimited)\n"
-                 "  --report <n>         Print a progress update every n batches (0 disables)\n",
+                 "  --report <n>         Print a progress update every n batches (0 disables)\n"
+                 "  --bench             Run fixed batches, ignore early-found nonce\n"
+                 "  --bench-batches <n> Run fixed n batches and enable bench mode\n"
+                 "  --data-global       Read DATA from global memory instead of constant\n",
                  program, MAX_NONCE_BYTES);
 }
 
@@ -127,36 +134,67 @@ void print_usage(const char *program) {
         }                                                                               \
     } while (0)
 
-__device__ void encode_nonce(uint64_t value, int nonce_len, uint8_t out[MAX_NONCE_BYTES]) {
+__device__ void encode_nonce(uint64_t lo, uint64_t hi, int nonce_len,
+                             uint8_t out[MAX_NONCE_BYTES]) {
     for (int i = 0; i < nonce_len; ++i) {
-        out[i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFF);
+        if (i < 8) {
+            out[i] = static_cast<uint8_t>((lo >> (8 * i)) & 0xFF);
+        } else {
+            int shift = i - 8;
+            out[i] = static_cast<uint8_t>((hi >> (8 * shift)) & 0xFF);
+        }
     }
 }
 
-__global__ void sha1_nonce_kernel(uint64_t start_nonce,
+__host__ __device__ static inline void add_offset(uint64_t base_lo,
+                                                  uint64_t base_hi,
+                                                  uint64_t offset,
+                                                  uint64_t *out_lo,
+                                                  uint64_t *out_hi) {
+    uint64_t sum_lo = base_lo + offset;
+    uint64_t carry = (sum_lo < base_lo) ? 1ULL : 0ULL;
+    *out_lo = sum_lo;
+    *out_hi = base_hi + carry;
+}
+
+__global__ void sha1_nonce_kernel(uint64_t start_lo,
+                                  uint64_t start_hi,
                                   uint64_t batch_size,
-                                  unsigned long long *result_nonce,
+                                  uint64_t *result_offset,
                                   volatile int *found_flag,
-                                  int nonces_per_thread) {
+                                  int nonces_per_thread,
+                                  int bench_mode,
+                                  uint64_t *match_count,
+                                  const uint8_t *data_ptr,
+                                  int data_len,
+                                  int use_global_data) {
     uint64_t thread_index =
         static_cast<uint64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     uint64_t per_thread = static_cast<uint64_t>(nonces_per_thread);
-    uint64_t thread_start = start_nonce + thread_index * per_thread;
-    uint64_t limit = (batch_size > (UINT64_MAX - start_nonce)) ? UINT64_MAX
-                                                              : start_nonce + batch_size;
+    uint64_t thread_start_offset = thread_index * per_thread;
 
     for (int i = 0; i < nonces_per_thread; ++i) {
-        uint64_t candidate = thread_start + i;
-        if (candidate >= limit || *found_flag) {
+        uint64_t offset = thread_start_offset + static_cast<uint64_t>(i);
+        if (offset >= batch_size) {
+            return;
+        }
+        if (!bench_mode && *found_flag) {
             return;
         }
 
         Sha1Ctx ctx;
         uint8_t digest[20];
         uint8_t nonce_bytes[MAX_NONCE_BYTES];
+        uint64_t candidate_lo = 0;
+        uint64_t candidate_hi = 0;
+        add_offset(start_lo, start_hi, offset, &candidate_lo, &candidate_hi);
         sha1_init(&ctx);
-        sha1_update(&ctx, d_data_bytes, static_cast<size_t>(d_data_len));
-        encode_nonce(candidate, d_nonce_len, nonce_bytes);
+        if (use_global_data) {
+            sha1_update(&ctx, data_ptr, static_cast<size_t>(data_len));
+        } else {
+            sha1_update(&ctx, d_data_bytes, static_cast<size_t>(d_data_len));
+        }
+        encode_nonce(candidate_lo, candidate_hi, d_nonce_len, nonce_bytes);
         sha1_update(&ctx, nonce_bytes, static_cast<size_t>(d_nonce_len));
         sha1_final(&ctx, digest);
 
@@ -168,11 +206,18 @@ __global__ void sha1_nonce_kernel(uint64_t start_nonce,
             }
         }
         if (match) {
-            int *flag_ptr = const_cast<int *>(found_flag);
-            if (atomicCAS(flag_ptr, 0, 1) == 0) {
-                *result_nonce = static_cast<unsigned long long>(candidate);
+            if (bench_mode) {
+                if (match_count) {
+                    atomicAdd(reinterpret_cast<unsigned long long *>(match_count),
+                              1ULL);
+                }
+            } else {
+                int *flag_ptr = const_cast<int *>(found_flag);
+                if (atomicCAS(flag_ptr, 0, 1) == 0) {
+                    *result_offset = offset;
+                }
+                return;
             }
-            return;
         }
     }
 }
@@ -182,6 +227,7 @@ __global__ void sha1_nonce_kernel(uint64_t start_nonce,
 int main(int argc, char **argv) {
     std::string data_hex;
     std::string suffix_hex;
+    std::string start_hex;
     SearchConfig config;
 
     for (int i = 1; i < argc; ++i) {
@@ -199,11 +245,21 @@ int main(int argc, char **argv) {
         } else if (arg == "--per-thread" && i + 1 < argc) {
             config.nonces_per_thread = std::atoi(argv[++i]);
         } else if (arg == "--start" && i + 1 < argc) {
-            config.start_nonce = std::strtoull(argv[++i], nullptr, 0);
+            config.start_nonce_lo = std::strtoull(argv[++i], nullptr, 0);
+            config.start_nonce_hi = 0;
+        } else if (arg == "--start-hex" && i + 1 < argc) {
+            start_hex = argv[++i];
         } else if (arg == "--max-batches" && i + 1 < argc) {
             config.max_batches = std::strtoull(argv[++i], nullptr, 0);
         } else if (arg == "--report" && i + 1 < argc) {
             config.report_every = std::atoi(argv[++i]);
+        } else if (arg == "--bench") {
+            config.bench_mode = true;
+        } else if (arg == "--bench-batches" && i + 1 < argc) {
+            config.bench_mode = true;
+            config.max_batches = std::strtoull(argv[++i], nullptr, 0);
+        } else if (arg == "--data-global") {
+            config.use_global_data = true;
         } else if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
@@ -227,10 +283,32 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "blocks, threads, and per-thread counts must be positive\n");
         return 1;
     }
+    if (config.bench_mode && config.max_batches == 0) {
+        std::fprintf(stderr, "bench mode requires --max-batches > 0\n");
+        return 1;
+    }
 
     try {
         std::vector<uint8_t> data_bytes = parse_hex(data_hex);
         std::vector<uint8_t> suffix_bytes = parse_hex(suffix_hex);
+
+        if (!start_hex.empty()) {
+            std::vector<uint8_t> start_bytes = parse_hex(start_hex);
+            if (start_bytes.size() > static_cast<size_t>(config.nonce_len)) {
+                throw std::runtime_error("start-hex length exceeds nonce length");
+            }
+            config.start_nonce_lo = 0;
+            config.start_nonce_hi = 0;
+            for (size_t j = 0; j < start_bytes.size(); ++j) {
+                if (j < 8) {
+                    config.start_nonce_lo |=
+                        static_cast<uint64_t>(start_bytes[j]) << (8 * j);
+                } else {
+                    config.start_nonce_hi |=
+                        static_cast<uint64_t>(start_bytes[j]) << (8 * (j - 8));
+                }
+            }
+        }
 
         if (data_bytes.empty()) {
             throw std::runtime_error("DATA cannot be empty");
@@ -242,8 +320,19 @@ int main(int argc, char **argv) {
             throw std::runtime_error("SUFFIX length must be 1 or 2 bytes");
         }
 
-        CHECK_CUDA(cudaMemcpyToSymbol(d_data_bytes, data_bytes.data(), data_bytes.size()));
         int data_len = static_cast<int>(data_bytes.size());
+        const uint8_t *d_data_ptr = nullptr;
+        DeviceBytePtr d_data_storage(nullptr);
+        if (config.use_global_data) {
+            uint8_t *tmp = nullptr;
+            CHECK_CUDA(cudaMalloc(&tmp, data_bytes.size()));
+            CHECK_CUDA(cudaMemcpy(tmp, data_bytes.data(), data_bytes.size(),
+                                  cudaMemcpyHostToDevice));
+            d_data_ptr = tmp;
+            d_data_storage.reset(tmp);
+        } else {
+            CHECK_CUDA(cudaMemcpyToSymbol(d_data_bytes, data_bytes.data(), data_bytes.size()));
+        }
         CHECK_CUDA(cudaMemcpyToSymbol(d_data_len, &data_len, sizeof(int)));
         CHECK_CUDA(cudaMemcpyToSymbol(d_nonce_len, &config.nonce_len, sizeof(int)));
         int suffix_len = static_cast<int>(suffix_bytes.size());
@@ -252,17 +341,24 @@ int main(int argc, char **argv) {
         std::memcpy(suffix_pad, suffix_bytes.data(), suffix_bytes.size());
         CHECK_CUDA(cudaMemcpyToSymbol(d_suffix_bytes, suffix_pad, sizeof(suffix_pad)));
 
-        DeviceNoncePtr d_result_nonce(nullptr);
+        DeviceU64Ptr d_result_offset(nullptr);
         DeviceIntPtr d_found_flag(nullptr);
+        DeviceU64Ptr d_match_count(nullptr);
         {
-            unsigned long long *tmp = nullptr;
-            CHECK_CUDA(cudaMalloc(&tmp, sizeof(unsigned long long)));
-            d_result_nonce.reset(tmp);
+            uint64_t *tmp = nullptr;
+            CHECK_CUDA(cudaMalloc(&tmp, sizeof(uint64_t)));
+            d_result_offset.reset(tmp);
         }
         {
             int *tmp = nullptr;
             CHECK_CUDA(cudaMalloc(&tmp, sizeof(int)));
             d_found_flag.reset(tmp);
+        }
+        if (config.bench_mode) {
+            uint64_t *tmp = nullptr;
+            CHECK_CUDA(cudaMalloc(&tmp, sizeof(uint64_t)));
+            d_match_count.reset(tmp);
+            CHECK_CUDA(cudaMemset(d_match_count.get(), 0, sizeof(uint64_t)));
         }
 
         uint64_t batch_size =
@@ -278,45 +374,56 @@ int main(int argc, char **argv) {
                     config.nonces_per_thread,
                     static_cast<unsigned long long>(batch_size));
 
-        uint64_t batches_launched = 0;
+        uint64_t batches_launched = 0; 
         uint64_t total_candidates = 0;
         auto start_time = std::chrono::steady_clock::now();
         bool found = false;
-        uint64_t found_nonce_value = 0;
-        uint64_t current_start = config.start_nonce;
+        uint64_t found_offset = 0;
+        uint64_t current_start_lo = config.start_nonce_lo;
+        uint64_t current_start_hi = config.start_nonce_hi;
+        cudaEvent_t gpu_start = nullptr;
+        cudaEvent_t gpu_stop = nullptr;
+        bool use_gpu_timer = false;
+        if (config.bench_mode) {
+            CHECK_CUDA(cudaEventCreate(&gpu_start));
+            CHECK_CUDA(cudaEventCreate(&gpu_stop));
+            CHECK_CUDA(cudaEventRecord(gpu_start));
+            use_gpu_timer = true;
+        }
 
         while (config.max_batches == 0 || batches_launched < config.max_batches) {
             CHECK_CUDA(cudaMemset(d_found_flag.get(), 0, sizeof(int)));
 
             sha1_nonce_kernel<<<config.blocks, config.threads_per_block>>>(
-                current_start, batch_size, d_result_nonce.get(), d_found_flag.get(),
-                config.nonces_per_thread);
+                current_start_lo, current_start_hi, batch_size,
+                d_result_offset.get(), d_found_flag.get(), config.nonces_per_thread,
+                config.bench_mode ? 1 : 0,
+                config.bench_mode ? d_match_count.get() : nullptr,
+                d_data_ptr, data_len, config.use_global_data ? 1 : 0);
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
 
             int host_found = 0;
             CHECK_CUDA(cudaMemcpy(&host_found, d_found_flag.get(), sizeof(int),
                                   cudaMemcpyDeviceToHost));
-            if (host_found) {
-                unsigned long long nonce_value = 0;
-                CHECK_CUDA(cudaMemcpy(&nonce_value, d_result_nonce.get(),
-                                      sizeof(unsigned long long),
+            if (host_found && !config.bench_mode) {
+                CHECK_CUDA(cudaMemcpy(&found_offset, d_result_offset.get(),
+                                      sizeof(uint64_t),
                                       cudaMemcpyDeviceToHost));
-                found_nonce_value = nonce_value;
                 found = true;
-                if (nonce_value >= config.start_nonce) {
-                    total_candidates = (nonce_value - config.start_nonce) + 1;
-                }
+                total_candidates =
+                    batches_launched * batch_size + found_offset + 1;
                 break;
             }
 
             total_candidates += batch_size;
             ++batches_launched;
-            if (UINT64_MAX - current_start < batch_size) {
-                std::printf("Nonce counter overflow, stopping search\n");
-                break;
-            }
-            current_start += batch_size;
+            uint64_t next_lo = 0;
+            uint64_t next_hi = 0;
+            add_offset(current_start_lo, current_start_hi, batch_size,
+                       &next_lo, &next_hi);
+            current_start_lo = next_lo;
+            current_start_hi = next_hi;
 
             if (config.report_every > 0 &&
                 (batches_launched % config.report_every) == 0) {
@@ -333,13 +440,34 @@ int main(int argc, char **argv) {
             }
         }
 
+        double gpu_seconds = 0.0;
+        if (use_gpu_timer) {
+            CHECK_CUDA(cudaEventRecord(gpu_stop));
+            CHECK_CUDA(cudaEventSynchronize(gpu_stop));
+            float elapsed_ms = 0.0f;
+            CHECK_CUDA(cudaEventElapsedTime(&elapsed_ms, gpu_start, gpu_stop));
+            gpu_seconds = elapsed_ms / 1000.0;
+            CHECK_CUDA(cudaEventDestroy(gpu_start));
+            CHECK_CUDA(cudaEventDestroy(gpu_stop));
+        }
+
         if (!found) {
             std::printf("Search ended without a matching nonce\n");
         } else {
             std::vector<uint8_t> nonce_bytes(config.nonce_len, 0);
+            uint64_t nonce_lo = 0;
+            uint64_t nonce_hi = 0;
+            add_offset(current_start_lo, current_start_hi, found_offset,
+                       &nonce_lo, &nonce_hi);
             for (int i = 0; i < config.nonce_len; ++i) {
-                nonce_bytes[i] =
-                    static_cast<uint8_t>((found_nonce_value >> (8 * i)) & 0xFF);
+                if (i < 8) {
+                    nonce_bytes[i] =
+                        static_cast<uint8_t>((nonce_lo >> (8 * i)) & 0xFF);
+                } else {
+                    int shift = i - 8;
+                    nonce_bytes[i] =
+                        static_cast<uint8_t>((nonce_hi >> (8 * shift)) & 0xFF);
+                }
             }
 
             std::vector<uint8_t> combined = data_bytes;
@@ -356,7 +484,7 @@ int main(int argc, char **argv) {
                 std::chrono::duration_cast<std::chrono::duration<double>>(finish_time -
                                                                           start_time)
                     .count();
-            std::printf("Found nonce after checking %llu candidates in %.2f s "
+            std::printf("Found nonce after checking %llu candidates in %.6f s "
                         "(%.2f MH/s)\n",
                         static_cast<unsigned long long>(total_candidates), seconds,
                         seconds > 0 ? (total_candidates / 1e6) / seconds : 0.0);
@@ -364,6 +492,24 @@ int main(int argc, char **argv) {
                         bytes_to_hex(nonce_bytes).c_str());
             std::printf("SHA1(D+nonce): %s\n",
                         bytes_to_hex(digest_vec).c_str());
+        }
+        if (config.bench_mode) {
+            uint64_t matches = 0;
+            CHECK_CUDA(cudaMemcpy(&matches, d_match_count.get(),
+                                  sizeof(uint64_t),
+                                  cudaMemcpyDeviceToHost));
+            auto finish_time = std::chrono::steady_clock::now();
+            double cpu_seconds =
+                std::chrono::duration_cast<std::chrono::duration<double>>(finish_time -
+                                                                          start_time)
+                    .count();
+            double seconds = use_gpu_timer ? gpu_seconds : cpu_seconds;
+            std::printf("Bench complete: %llu candidates in %.6f s (%.2f MH/s)\n",
+                        static_cast<unsigned long long>(total_candidates),
+                        seconds,
+                        seconds > 0 ? (total_candidates / 1e6) / seconds : 0.0);
+            std::printf("Matches observed: %llu\n",
+                        static_cast<unsigned long long>(matches));
         }
 
     } catch (const std::exception &ex) {

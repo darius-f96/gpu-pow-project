@@ -71,13 +71,13 @@ SHA1_DEV void sha1_transform(Sha1Ctx *ctx, const uint8_t data[64]) {
     ctx->state[3] += d;
     ctx->state[4] += e;
 }
-
+//Fips 180-4 SHA-1 functions
 SHA1_DEV void sha1_init(Sha1Ctx *ctx) {
     ctx->state[0] = 0x67452301U;
-    ctx->state[1] = 0xEFCDAB89U;
-    ctx->state[2] = 0x98BADCFEU;
+    ctx->state[1] = 0xefcdab89U;
+    ctx->state[2] = 0x98badcfeU;
     ctx->state[3] = 0x10325476U;
-    ctx->state[4] = 0xC3D2E1F0U;
+    ctx->state[4] = 0xc3d2e1f0U;
     ctx->bitcount = 0;
     for (int i = 0; i < 64; ++i) {
         ctx->buffer[i] = 0;
@@ -85,7 +85,7 @@ SHA1_DEV void sha1_init(Sha1Ctx *ctx) {
 }
 
 SHA1_DEV void sha1_update(Sha1Ctx *ctx, const uint8_t *data, size_t len) {
-    size_t buffer_idx = (size_t)((ctx->bitcount >> 3) & 0x3F);
+    size_t buffer_idx = (size_t)((ctx->bitcount >> 3) & 0x3F); //bytes number % 64
     ctx->bitcount += ((uint64_t)len) << 3;
 
     size_t i = 0;

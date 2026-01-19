@@ -19,11 +19,15 @@ make clean    # removes the binaries
 
 * `--data` – base payload in hexadecimal (whitespace / `0x` prefixes ignored)
 * `--suffix` – 1 or 2-byte hexadecimal suffix the SHA1 digest must end with
-* `--nonce-len` – nonce size in bytes (1–8, default 4)
+* `--nonce-len` – nonce size in bytes (1–16, default 4)
 * `--blocks`, `--threads`, `--per-thread` – CUDA launch configuration
 * `--start` – starting nonce counter (interpreted little-endian)
+* `--start-hex` – starting nonce bytes (little-endian)
 * `--max-batches` – stop after N kernel batches (0 = unlimited)
 * `--report` – print a throughput report every N batches
+* `--bench` – run fixed batches and ignore early-found nonce (for steady-state throughput)
+* `--bench-batches` – run exactly N batches in bench mode (shorthand for `--bench --max-batches N`)
+* `--data-global` – read DATA from global memory instead of constant memory
 
 The kernel keeps the base data and suffix in constant memory, generates nonce
 candidates directly on the device, and evaluates
@@ -51,3 +55,18 @@ If `--suffix` is supplied the CPU version brute-forces nonces of length
 `--nonce-len` (default 4) and reports when it finds a match. Otherwise it
 simply prints `SHA1(DATA || nonce)` for the provided operands. Use it to
 cross-check GPU results or to experiment on hosts without CUDA.
+
+## Performance report
+
+See `REPORT.md` for a fill-in template. To collect repeatable metrics, you can
+run:
+
+```
+make
+./scripts/benchmark.sh
+```
+
+The script runs a small grid of launch configurations and prints throughput
+metrics you can paste into the report. Override inputs with environment
+variables like `DATA_HEX`, `SUFFIX_HEX`, `NONCE_LEN`, `MAX_BATCHES`, and
+`REPORT_EVERY` if you want to customize the run.
