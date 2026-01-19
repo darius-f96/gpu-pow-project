@@ -50,72 +50,72 @@ this repo.
 
 Input: DATA=48656c6c6f20574f524c44, SUFFIX=ffff, NONCE_LEN=4, MAX_BATCHES=2000, TRIALS=5, `--bench`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 3044.55  | 3023.95 | 3056.73 | Bench complete lines from 5 trials |
-| 512    | 256     | 8             | 1,048,576  | 3659.03  | 3648.37 | 3678.50 | Bench complete lines from 5 trials |
-| 512    | 256     | 16            | 2,097,152  | 3879.80  | 3708.70 | 3960.22 | Bench complete lines from 5 trials |
-| 1024   | 256     | 16            | 4,194,304  | 4084.21  | 4043.42 | 4122.51 | Bench complete lines from 5 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 3044.55  | 3023.95 | 3056.73 | 15961           | Bench complete lines from 5 trials |
+| 512    | 256     | 8             | 1,048,576  | 3659.03  | 3648.37 | 3678.50 | 31844           | Bench complete lines from 5 trials |
+| 512    | 256     | 16            | 2,097,152  | 3879.80  | 3708.70 | 3960.22 | 64129           | Bench complete lines from 5 trials |
+| 1024   | 256     | 16            | 4,194,304  | 4084.21  | 4043.42 | 4122.51 | 128196          | Bench complete lines from 5 trials |
 
 ## Bench results (data-global)
 
 Input: DATA=48656c6c6f20574f524c44, SUFFIX=ffff, NONCE_LEN=4, MAX_BATCHES=2000, TRIALS=4, `--bench --data-global`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 3032.27  | 2885.05 | 3139.14 | Bench complete lines from 4 trials |
-| 512    | 256     | 8             | 1,048,576  | 3531.93  | 3493.89 | 3570.41 | Bench complete lines from 4 trials |
-| 512    | 256     | 16            | 2,097,152  | 3864.76  | 3803.39 | 3903.77 | Bench complete lines from 4 trials |
-| 1024   | 256     | 16            | 4,194,304  | 4187.73  | 4171.73 | 4208.23 | Bench complete lines from 4 trials |
-| 1024   | 512     | 8             | 4,194,304  | 3846.83  | 3798.21 | 3880.36 | Bench complete lines from 4 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 3032.27  | 2885.05 | 3139.14 | 15961           | Bench complete lines from 4 trials |
+| 512    | 256     | 8             | 1,048,576  | 3531.93  | 3493.89 | 3570.41 | 31844           | Bench complete lines from 4 trials |
+| 512    | 256     | 16            | 2,097,152  | 3864.76  | 3803.39 | 3903.77 | 64129           | Bench complete lines from 4 trials |
+| 1024   | 256     | 16            | 4,194,304  | 4187.73  | 4171.73 | 4208.23 | 128196          | Bench complete lines from 4 trials |
+| 1024   | 512     | 8             | 4,194,304  | 3846.83  | 3798.21 | 3880.36 | 128196          | Bench complete lines from 4 trials |
 
 ## Bench results (data-global, longer nonce)
 
 Input: DATA=706C656173652067697665206D65206120676F6F64206772616465, SUFFIX=ABF7, NONCE_LEN=16, MAX_BATCHES=2000, TRIALS=4, `--bench --data-global`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 2609.42  | 2553.13 | 2641.44 | Bench complete lines from 4 trials |
-| 512    | 256     | 8             | 1,048,576  | 3031.58  | 2979.01 | 3088.19 | Bench complete lines from 4 trials |
-| 512    | 256     | 16            | 2,097,152  | 3358.35  | 3310.50 | 3412.92 | Bench complete lines from 4 trials |
-| 1024   | 256     | 16            | 4,194,304  | 3682.17  | 3670.65 | 3699.61 | Bench complete lines from 4 trials |
-| 1024   | 512     | 8             | 4,194,304  | 3538.42  | 3497.60 | 3573.71 | Bench complete lines from 4 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 2609.42  | 2553.13 | 2641.44 | 16090           | Bench complete lines from 4 trials |
+| 512    | 256     | 8             | 1,048,576  | 3031.58  | 2979.01 | 3088.19 | 32006           | Bench complete lines from 4 trials |
+| 512    | 256     | 16            | 2,097,152  | 3358.35  | 3310.50 | 3412.92 | 63797           | Bench complete lines from 4 trials |
+| 1024   | 256     | 16            | 4,194,304  | 3682.17  | 3670.65 | 3699.61 | 127647          | Bench complete lines from 4 trials |
+| 1024   | 512     | 8             | 4,194,304  | 3538.42  | 3497.60 | 3573.71 | 127647          | Bench complete lines from 4 trials |
 
 ## Bench results (constant, longer nonce)
 
 Input: DATA=706C656173652067697665206D65206120676F6F64206772616465, SUFFIX=ABF7, NONCE_LEN=16, MAX_BATCHES=2000, TRIALS=4, `--bench`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 2717.17  | 2589.88 | 2806.66 | Bench complete lines from 4 trials |
-| 512    | 256     | 8             | 1,048,576  | 3154.85  | 3087.09 | 3287.31 | Bench complete lines from 4 trials |
-| 512    | 256     | 16            | 2,097,152  | 3453.13  | 3352.38 | 3535.48 | Bench complete lines from 4 trials |
-| 1024   | 256     | 16            | 4,194,304  | 3695.86  | 3671.75 | 3734.72 | Bench complete lines from 4 trials |
-| 1024   | 512     | 8             | 4,194,304  | 3474.38  | 3417.51 | 3531.73 | Bench complete lines from 4 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 2717.17  | 2589.88 | 2806.66 | 16090           | Bench complete lines from 4 trials |
+| 512    | 256     | 8             | 1,048,576  | 3154.85  | 3087.09 | 3287.31 | 32006           | Bench complete lines from 4 trials |
+| 512    | 256     | 16            | 2,097,152  | 3453.13  | 3352.38 | 3535.48 | 63797           | Bench complete lines from 4 trials |
+| 1024   | 256     | 16            | 4,194,304  | 3695.86  | 3671.75 | 3734.72 | 127647          | Bench complete lines from 4 trials |
+| 1024   | 512     | 8             | 4,194,304  | 3474.38  | 3417.51 | 3531.73 | 127647          | Bench complete lines from 4 trials |
 
 ## Bench results (constant, nonce_len=8)
 
 Input: DATA=706C656173652067697665206D65206120676F6F64206772616465, SUFFIX=FF23, NONCE_LEN=8, MAX_BATCHES=2000, TRIALS=4, `--bench`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 3092.89  | 2963.89 | 3207.71 | Bench complete lines from 4 trials |
-| 512    | 256     | 8             | 1,048,576  | 3621.13  | 3567.28 | 3661.49 | Bench complete lines from 4 trials |
-| 512    | 256     | 16            | 2,097,152  | 3888.93  | 3856.30 | 3960.93 | Bench complete lines from 4 trials |
-| 1024   | 256     | 16            | 4,194,304  | 4126.72  | 4051.69 | 4154.37 | Bench complete lines from 4 trials |
-| 1024   | 512     | 8             | 4,194,304  | 3778.15  | 3737.22 | 3819.00 | Bench complete lines from 4 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 3092.89  | 2963.89 | 3207.71 | 16179           | Bench complete lines from 4 trials |
+| 512    | 256     | 8             | 1,048,576  | 3621.13  | 3567.28 | 3661.49 | 32079           | Bench complete lines from 4 trials |
+| 512    | 256     | 16            | 2,097,152  | 3888.93  | 3856.30 | 3960.93 | 64030           | Bench complete lines from 4 trials |
+| 1024   | 256     | 16            | 4,194,304  | 4126.72  | 4051.69 | 4154.37 | 128496          | Bench complete lines from 4 trials |
+| 1024   | 512     | 8             | 4,194,304  | 3778.15  | 3737.22 | 3819.00 | 128496          | Bench complete lines from 4 trials |
 
 ## Bench results (data-global, nonce_len=8)
 
 Input: DATA=706C656173652067697665206D65206120676F6F64206772616465, SUFFIX=FF23, NONCE_LEN=8, MAX_BATCHES=2000, TRIALS=4, `--bench --data-global`.
 
-| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Notes |
-| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | ----- |
-| 256    | 256     | 8             | 524,288    | 2727.54  | 2668.80 | 2820.47 | Bench complete lines from 4 trials |
-| 512    | 256     | 8             | 1,048,576  | 3401.93  | 3347.40 | 3437.51 | Bench complete lines from 4 trials |
-| 512    | 256     | 16            | 2,097,152  | 3825.97  | 3753.00 | 3997.44 | Bench complete lines from 4 trials |
-| 1024   | 256     | 16            | 4,194,304  | 4094.34  | 4060.43 | 4130.35 | Bench complete lines from 4 trials |
-| 1024   | 512     | 8             | 4,194,304  | 3805.68  | 3763.57 | 3828.75 | Bench complete lines from 4 trials |
+| Blocks | Threads | Nonces/thread | Batch size | Avg MH/s | Min MH/s | Max MH/s | Matches observed | Notes |
+| ------ | ------- | ------------- | ---------- | -------- | ------- | ------- | --------------- | ----- |
+| 256    | 256     | 8             | 524,288    | 2727.54  | 2668.80 | 2820.47 | 16179           | Bench complete lines from 4 trials |
+| 512    | 256     | 8             | 1,048,576  | 3401.93  | 3347.40 | 3437.51 | 32079           | Bench complete lines from 4 trials |
+| 512    | 256     | 16            | 2,097,152  | 3825.97  | 3753.00 | 3997.44 | 64030           | Bench complete lines from 4 trials |
+| 1024   | 256     | 16            | 4,194,304  | 4094.34  | 4060.43 | 4130.35 | 128496          | Bench complete lines from 4 trials |
+| 1024   | 512     | 8             | 4,194,304  | 3805.68  | 3763.57 | 3828.75 | 128496          | Example trial: 8388608000 candidates in 2.197347 s (3817.61 MH/s); Bench complete lines from 4 trials |
 
 
 ## Observations
