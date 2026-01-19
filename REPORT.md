@@ -121,6 +121,7 @@ Input: DATA=706C656173652067697665206D65206120676F6F64206772616465, SUFFIX=FF23,
 ## Observations
 
 - Steady-state throughput climbed with larger batches and higher `nonces/thread` up to 16, peaking around ~4.15 GH/s (4154 MH/s) for 1024×256×16.
+- Increasing nonces/thread reduces launch overhead per hash, but too large values may reduce responsiveness (and on Windows can risk long kernel execution).
 - Constant vs global memory for DATA shows only small differences (typically a few percent) for this data size and nonce length.
 - Increasing threads per block to 512 sometimes reduced throughput, suggesting occupancy or register-pressure tradeoffs.
 - Bench measurements use CUDA event timing; each trial runs a fixed batch count.
