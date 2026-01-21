@@ -26,7 +26,7 @@ SHA1_DEV void sha1_transform(Sha1Ctx *ctx, const uint8_t data[64]) {
     uint32_t c = ctx->state[2];
     uint32_t d = ctx->state[3];
     uint32_t e = ctx->state[4];
-    uint32_t w[80];
+    uint32_t w[16];
 
     for (int i = 0; i < 16; ++i) {
         int idx = i * 4;
@@ -34,9 +34,6 @@ SHA1_DEV void sha1_transform(Sha1Ctx *ctx, const uint8_t data[64]) {
                ((uint32_t)data[idx + 1] << 16) |
                ((uint32_t)data[idx + 2] << 8) |
                (uint32_t)data[idx + 3];
-    }
-    for (int i = 16; i < 80; ++i) {
-        w[i] = sha1_rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
     }
 
 #define SHA1_ROUND(fn, k, word)                      \
@@ -50,17 +47,21 @@ SHA1_DEV void sha1_transform(Sha1Ctx *ctx, const uint8_t data[64]) {
         a = temp;                                    \
     }
 
-    for (int i = 0; i < 20; ++i) {
-        SHA1_ROUND((b & c) | ((~b) & d), 0x5A827999U, w[i]);
-    }
-    for (int i = 20; i < 40; ++i) {
-        SHA1_ROUND(b ^ c ^ d, 0x6ED9EBA1U, w[i]);
-    }
-    for (int i = 40; i < 60; ++i) {
-        SHA1_ROUND((b & c) | (b & d) | (c & d), 0x8F1BBCDCU, w[i]);
-    }
-    for (int i = 60; i < 80; ++i) {
-        SHA1_ROUND(b ^ c ^ d, 0xCA62C1D6U, w[i]);
+    for (int i = 0; i < 80; ++i) {
+        if (i >= 16) {
+            w[i & 15] = sha1_rotl(w[(i - 3) & 15] ^ w[(i - 8) & 15] ^
+                                  w[(i - 14) & 15] ^ w[(i - 16) & 15], 1);
+        }
+        uint32_t wt = w[i & 15];
+        if (i < 20) {
+            SHA1_ROUND((b & c) | ((~b) & d), 0x5A827999U, wt);
+        } else if (i < 40) {
+            SHA1_ROUND(b ^ c ^ d, 0x6ED9EBA1U, wt);
+        } else if (i < 60) {
+            SHA1_ROUND((b & c) | (b & d) | (c & d), 0x8F1BBCDCU, wt);
+        } else {
+            SHA1_ROUND(b ^ c ^ d, 0xCA62C1D6U, wt);
+        }
     }
 
 #undef SHA1_ROUND
